@@ -1,0 +1,39 @@
+version: '3.7'
+
+services:
+  maindb:
+    # image: mongo:4.0.4
+    image: postgres:12-alpine
+    restart: always
+    volumes:
+      - ./db/init-db:/docker-entrypoint-initdb.d
+      - ./db/data-db:/data/db
+    environment:
+      - POSTGRES_DB=myproject
+      - POSTGRES_USER=myprojectuser
+      - POSTGRES_PASSWORD=password
+      - "POSTGRES_HOST_AUTH_METHOD=trust"
+
+    ports:
+      - 5433:5432
+    expose:
+      - 5433
+
+  maindjango:
+    tty: true
+    stdin_open: true
+    build: .
+    volumes:
+      - .:/public
+    command: >
+      sh -c "python /public/manage.py collectstatic --noinput &&
+             python /public/manage.py makemigrations &&
+             python /public/manage.py migrate &&
+             gunicorn core.wsgi --bind 0.0.0.0:2293 --reload --workers 3 --chdir /public/"
+    restart: always
+    ports:
+      - 2293:2293
+    expose:
+      - 2293
+    depends_on:
+      - maindb

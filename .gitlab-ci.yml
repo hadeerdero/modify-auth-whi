@@ -1,0 +1,36 @@
+# You can override the included template(s) by including variable overrides
+# SAST customization: https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
+# Secret Detection customization: https://docs.gitlab.com/ee/user/application_security/secret_detection/#customizing-settings
+# Dependency Scanning customization: https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#customizing-the-dependency-scanning-settings
+# Note that environment variables can be set in several places
+# See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
+stages:
+  - deploy
+
+we_health_it:
+  stage: deploy
+  image: ubuntu
+  tags: [docker]
+  before_script:
+    - eval $(ssh-agent -s)
+    - mkdir -p ~/.ssh
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+    - echo $ID_ED25519 > ~/.ssh/id_ed25519.pub
+    - apt-get update -y
+    - apt-get install -y sshpass
+  script:
+    - echo $CI_COMMIT_BRANCH
+    - if [ "$CI_COMMIT_BRANCH" == "main" ]; then REDFOXES_DOMAIN="$REDFOXES_DOMAIN_MAIN"; else REDFOXES_DOMAIN="$REDFOXES_DOMAIN_DEV"; fi
+    - if [ "$CI_COMMIT_BRANCH" == "main" ]; then REDFOXES_PATH="public/main/public"; else REDFOXES_PATH="public/dev/public"; fi
+    - if [ "$CI_COMMIT_BRANCH" == "main" ]; then REDFOXES_DOCK_PATH="~/public/main/public/docker-compose.main.yml"; else REDFOXES_DOCK_PATH="~/public/dev/public/docker-compose.yml"; fi
+    # - REDFOXES_DOMAIN="$REDFOXES_DOMAIN_MAIN"
+    - echo ${REDFOXES_DOMAIN}
+    - sshpass -p $REDFOXES_SSH_PASSWORD ssh $REDFOXES_USERNAME@${REDFOXES_DOMAIN} "ls -la"
+    - sshpass -p $REDFOXES_SSH_PASSWORD ssh $REDFOXES_USERNAME@${REDFOXES_DOMAIN} "source enable_pub_key.sh && cd ${REDFOXES_PATH} && git pull origin $CI_COMMIT_BRANCH"
+    - sshpass -p $REDFOXES_SSH_PASSWORD ssh $REDFOXES_USERNAME@${REDFOXES_DOMAIN} "sudo docker-compose -f ${REDFOXES_DOCK_PATH} up -d --build"
+    - sshpass -p $REDFOXES_SSH_PASSWORD ssh $REDFOXES_USERNAME@${REDFOXES_DOMAIN} "sudo docker image prune -a -f"
+    - sshpass -p $REDFOXES_SSH_PASSWORD ssh $REDFOXES_USERNAME@${REDFOXES_DOMAIN} "sudo service nginx restart all && sudo docker ps"
+  only:
+    refs:
+      - main
+      - dev 
